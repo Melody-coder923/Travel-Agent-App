@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
+import matplotlib.pyplot as plt
 
 
 # Set up the Streamlit app
@@ -85,6 +85,7 @@ if groq_api_key and serp_api_key:
             "For each search term, `search_google` and analyze the results."
             "From the results of all searches, return the 10 most relevant results to the user's preferences.",
             "Remember: the quality of the results is important.",
+            
         ],
         tools=[SerpApiTools(api_key=serp_api_key)],
         add_datetime_to_instructions=True,
@@ -106,6 +107,10 @@ if groq_api_key and serp_api_key:
             "Remember: the quality of the itinerary is important.",
             "Focus on clarity, coherence, and overall quality.",
             "Never make up facts or plagiarize. Always provide proper attribution.",
+             "Give structured output that fits into the following class definition"
+            "Class Output has attributes destination (str), duration (int), cost(Class Cost), itinerary (Class Itinerary)"
+            "Class Itinerary has attributes itinerary (str)"
+            "Class Cost has attributes total_cost(int), accomodation_cost(int),transport_cost(int),ticket_cost(int),food_cost(int)"
         ],
         add_datetime_to_instructions=True,
         response_model=Output,
@@ -123,8 +128,28 @@ if groq_api_key and serp_api_key:
             response = planner.run(f"{destination} for {num_days} days for {num_persons} persons under {total_budget} US dollar", stream=False)
             # st.write(response.content)
             if isinstance(response.content, Output):
-                st.write(response.content.itinerary.itinerary)
-            if isinstance(response.content, str):
+                output_obj = response.content
+                itinerary_obj = output_obj.itinerary
+                cost_obj = output_obj.cost
+                st.write(itinerary_obj.itinerary)
+                st.write(cost_obj)
+                cost_pie_chart = [cost_obj.accomodation_cost,
+                                  cost_obj.transport_cost,
+                                  cost_obj.ticket_cost,
+                                  cost_obj.food_cost
+                                  ]
+                y = np.array(cost_pie_chart)
+                labels = ["Accomodation", "Transport", "Ticket", "Food"]
+                fig1, ax1 = plt.subplots()
+                st.divider()
+                st.header("Cost Breakdowns 💰")
+                colors = ["#ff69b4", "#66b3ff", "#ffff99", "#ccccff"]
+                ax1.pie(y, labels=labels, autopct=lambda p: f'{p:.1f}US$', startangle=90,colors=colors)
+                ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+                st.pyplot(fig1)
+                st.subheader(f"Total Cost: {cost_obj.total_cost}US$ ")
+            
+            elif isinstance(response.content, str):
                 d = json.loads(response.content)
                 if isinstance(d["itinerary"],dict):
                     st.write(d["itinerary"].get("itinerary", d["itinerary"]))
