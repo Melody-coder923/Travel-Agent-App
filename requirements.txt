@@ -4,3 +4,5 @@ openai
 google-search-results
 markdown2 
 weasyprint
+groq
+duckduckgo-search
