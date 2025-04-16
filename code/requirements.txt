@@ -1,0 +1,5 @@
+agno==1.2.11
+matplotlib==3.8.2
+numpy==2.2.4
+pydantic==2.11.3
+streamlit==1.44.1

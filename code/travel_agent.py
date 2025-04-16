@@ -1,111 +1,125 @@
+# Text processing and file operations
 from textwrap import dedent
 import os
 import io
 import base64
-from pathlib import Path
 from typing import List
-from datetime import datetime
 
+# Web app and visualization libraries
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Data validation
 from pydantic import BaseModel, Field
 
+# AI agent libraries
 from agno.agent.agent import Agent
 from agno.models.groq.groq import Groq
 from agno.tools.duckduckgo import DuckDuckGoTools
-from agno.utils.log import logger
 
-# 优化：整理导入语句，删除未使用的库，按照标准实践进行分组
+# DATA MODELS
+# ===========
+# Define Pydantic models for structured data
 
-# 定义Pydantic模型
+# Single day activity model
 class DailyActivity(BaseModel):
     description: str = Field(
-        ..., 
+        ...,
         description="The description of the activity for the day "
-        "and includes the day number as prefix, e.g 'Day 1: Arrive'"
-    )
+        "and includes the day number as prefix, e.g 'Day 1: Arrive'")
 
+
+# Complete itinerary model containing all days
 class Itinerary(BaseModel):
     days: List[DailyActivity] = Field(
         ...,
         description="A list of activities for each day of the trip",
     )
 
-# 修改: 更新Cost模型以匹配API返回的字段名称
+
+# Cost breakdown model with all expense categories
 class Cost(BaseModel):
     totalcost: int = Field(
         ...,
-        description="The overall cost of the trip, including all expenses."
-    )
-    accomodationcost: int = Field(
+        description="The overall cost of the trip, including all expenses.")
+    accommodationcost: int = Field(
         ...,
-        description="The cost of lodging during the trip, such as hotels or Airbnb rentals."
+        description=
+        "The cost of lodging during the trip, such as hotels or Airbnb rentals."
     )
     transportcost: int = Field(
         ...,
-        description="The cost of transportation, including flights, trains, car rentals, or public transit."
+        description=
+        "The cost of transportation, including flights, trains, car rentals, or public transit."
     )
     ticketcost: int = Field(
         ...,
-        description="The cost of tickets for attractions, tours, or events during the trip."
+        description=
+        "The cost of tickets for attractions, tours, or events during the trip."
     )
     foodcost: int = Field(
-        ...,
-        description="The cost of meals and snacks during the trip"
-    )
+        ..., description="The cost of meals and snacks during the trip")
 
+
+# Main output model that combines all trip information
 class Output(BaseModel):
-    destination: str = Field(
-        ...,
-        description="The main destination of the trip."
-    )
-    duration: int = Field(
-        ...,
-        description="The number of days for the trip."
-    )
-    cost: Cost = Field(
-        ...,
-        description="The cost details of the trip."
-    )
+    destination: str = Field(...,
+                             description="The main destination of the trip.")
+    duration: int = Field(..., description="The number of days for the trip.")
+    cost: Cost = Field(..., description="The cost details of the trip.")
     itinerary: Itinerary = Field(
-        ...,
-        description="The detailed itinerary of the trip"
-    )
+        ..., description="The detailed itinerary of the trip")
 
-# 修改: 更新饼图创建函数以使用新的字段名
+
+# VISUALIZATION FUNCTIONS
+# ======================
 def create_pie_chart(cost_obj):
-    """创建并返回成本分布饼图"""
+    """Create and return a pie chart showing cost distribution"""
+    # Extract cost values from our cost object into a list
     cost_pie_chart = [
-        cost_obj.accomodationcost,
-        cost_obj.transportcost,
-        cost_obj.ticketcost,
-        cost_obj.foodcost
+        cost_obj.accommodationcost,  # Housing/lodging costs
+        cost_obj.transportcost,      # Travel/transportation costs
+        cost_obj.ticketcost,         # Tickets for attractions/events
+        cost_obj.foodcost            # Food and dining expenses
     ]
+    # Convert to numpy array for plotting
     y = np.array(cost_pie_chart)
-    labels = ["Accomodation", "Transport", "Ticket", "Food"]
+    
+    # Labels and colors for each slice of the chart
+    labels = ["Accommodation", "Transport", "Ticket", "Food"]
     colors = ["#ff69b4", "#66b3ff", "#ffff99", "#ccccff"]
     
+    # Create the figure and axis for our chart
     fig, ax = plt.subplots()
-    
+
+    # Helper function to convert percentages to dollar amounts on the chart
     def absolute_value(val):
-        a = np.round(val/100.*y.sum(), 0)
-        return f'${int(a)}'
-    
-    ax.pie(y, labels=labels, autopct=absolute_value, startangle=90, colors=colors)
-    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-    
+        a = np.round(val / 100. * y.sum(), 0)  # Calculate the dollar amount
+        return f'${int(a)}'  # Format as dollar string
+
+    # Create the pie chart with our data and styling
+    ax.pie(y,
+           labels=labels,
+           autopct=absolute_value,
+           startangle=90,
+           colors=colors)
+    ax.axis('equal')  # Make the pie circular rather than oval
+
     return fig
 
-# 修改: 简化save_markdown函数，去掉表格，改进格式
+
+# DOCUMENT CREATION FUNCTIONS
+# ==========================
 def save_markdown(destination, markdown_content, fig, cost_obj):
-    """保存Markdown内容并返回下载文件信息 - 简化版，无表格"""
-    # 将图表保存到缓冲区用于markdown嵌入
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png')
-    data = base64.b64encode(buf.getbuffer()).decode("ascii")
-    
-    # 重新格式化markdown内容，确保一致的格式
+    """Creates a downloadable travel plan document with the itinerary and cost chart"""
+    # Step 1: Convert the pie chart to an image that can be embedded in our document
+    buf = io.BytesIO()  # Create a memory buffer
+    fig.savefig(buf, format='png')  # Save the chart as PNG to the buffer
+    data = base64.b64encode(buf.getbuffer()).decode(
+        "ascii")  # Convert to text format that works in documents
+
+    # Step 2: Create the document content with a nice title and structure
     formatted_content = f"""# AI Travel Planner: {destination} Itinerary
 
 This itinerary was generated by an AI Travel Planner.
@@ -113,66 +127,77 @@ This itinerary was generated by an AI Travel Planner.
 ## Itinerary:
 
 """
-    
-    # 提取并添加每天的行程
+
+    # Step 3: Extract just the daily activities from our content
     for line in markdown_content.split('\n'):
         if line.strip().startswith('Day '):
             formatted_content += f"{line.strip()}\n\n"
-    
-    # 添加成本图表（不添加表格）
+
+    # Step 4: Add the cost breakdown chart to the document
     formatted_content += f"""## Cost Breakdown:
 
 ![Cost Breakdown Pie Chart](data:image/png;base64,{data})
 """
-    
-    # 保存到Markdown文件
+
+    # Step 5: Save the content as a Markdown file
     markdown_filename = f"{destination}_itinerary.md"
     with open(markdown_filename, "w", encoding="utf-8") as f:
         f.write(formatted_content)
-    
-    # 尝试生成PDF
-    download_file = markdown_filename
+
+    # Step 6: Try to convert the Markdown to a nicer PDF if possible
+    download_file = markdown_filename  # Default to markdown if PDF conversion fails
     try:
-        # 使用pandoc参数改进格式
-        cmd = (
-            f"pandoc {markdown_filename} "
-            f"--pdf-engine=xelatex "
-            f"-V geometry:margin=1in "
-            f"--standalone "
-            f"-o {destination}_itinerary.pdf"
-        )
+        # Use pandoc (a document converter) to create a PDF
+        cmd = (f"pandoc {markdown_filename} "
+               f"--pdf-engine=xelatex "
+               f"-V geometry:margin=1in "
+               f"--standalone "
+               f"-o {destination}_itinerary.pdf")
+        # Run the command to create the PDF
         res = os.system(cmd)
+        # If the PDF was created successfully
         if res == 0 and os.path.exists(f"{destination}_itinerary.pdf"):
             download_file = f"{destination}_itinerary.pdf"
-            # 读取PDF文件用于下载
+            # Read PDF file for download
             with open(download_file, "rb") as f:
                 download_data = f.read()
         else:
-            # PDF转换失败，退回到使用Markdown
+            # If PDF conversion failed, use the Markdown file instead
             with open(markdown_filename, "rb") as f:
                 download_data = f.read()
     except:
-        # 出现异常时，退回到使用Markdown
+        # If any error occurs, fall back to the Markdown file
         with open(markdown_filename, "rb") as f:
             download_data = f.read()
-    
+    # Return both the filename and the file content
     return download_file, download_data
 
-# 优化：将主程序逻辑封装为main函数
-def main():
-    # 设置Streamlit应用
-    st.title("AI Travel Planner ✈️")
-    st.caption("Plan your next adventure with AI Travel Planner by researching and planning a personalized itinerary on autopilot using llama")
 
-    # API密钥（在实际应用中应使用环境变量或密钥管理系统）
+# MAIN APPLICATION
+# ===============
+def main():
+    # Step 1: Set up Streamlit application interface
+    # ---------------------------------------------
+    st.title("AI Travel Planner ✈️")
+    st.caption(
+        "Plan your next adventure with AI Travel Planner by researching and planning a personalized itinerary on autopilot using llama"
+    )
+
+    # Step 2: Set up API connection
+    # ----------------------------
+    # API key (in production, use environment variables or key management systems)
     groq_api_key = "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"
 
-    # 创建代理
+    # Step 3: Create research agent
+    # ----------------------------
+    # This AI agent will search the web for travel information
     researcher = Agent(
         name="TravelResearcher",
         role="Travel Information Gatherer",
         model=Groq(id="llama-3.3-70b-versatile", api_key=groq_api_key),
-        description=dedent("Gather travel info using web search and provide a well-structured summary of findings."),
+        description=dedent(
+            "Gather travel info using web search and provide a well-structured summary of findings."
+        ),
         instructions=[
             "1. Analyze Request: Understand destination, duration, group size, budget.",
             "2. Formulate Queries: Generate 3-5 focused search queries for relevant activities, potential hotels (considering budget/group size), typical costs (per person if possible), and specific locations/addresses.",
@@ -194,15 +219,20 @@ def main():
             "   ```",
             "5. Return Summary: Output *only* this structured text summary. Be informative but reasonably concise. Ensure costs and locations are included for each item.",
         ],
-        tools=[DuckDuckGoTools()],
-        add_datetime_to_instructions=True,
+        tools=[DuckDuckGoTools()],  # Enable web search capability
+        add_datetime_to_instructions=True,  # Include current date/time info
     )
 
+    # Step 4: Create planning agent
+    # ----------------------------
+    # This AI agent will organize the research into a complete travel plan
     planner = Agent(
         name="ItineraryPlanner",
         role="Travel Itinerary Scheduler & Strict Formatter",
         model=Groq(id="llama-3.3-70b-versatile", api_key=groq_api_key),
-        description=dedent("Create a detailed itinerary by scheduling activities from research, then strictly format the output according to the Pydantic model, ensuring clean data types and values (especially integer costs)."),
+        description=dedent(
+            "Create a detailed itinerary by scheduling activities from research, then strictly format the output according to the Pydantic model, ensuring clean data types and values (especially integer costs)."
+        ),
         instructions=[
             "1. Receive Input: User request (destination, days, people, budget) AND a structured text block summarizing research findings.",
             "2. Analyze & Select: Review user request and potential activities/hotels from research.",
@@ -212,10 +242,10 @@ def main():
             "   - Calculate the final estimated cost as a single **integer** value in USD for that day's scheduled activities (for the whole group). Resolve ranges/per-person costs. Store this single integer.",
             "   - Identify the most relevant specific address string.",
             "5. Select Hotel & Determine Price: Select ONE hotel from the research suggestions. Determine its estimated price per night as a single **integer** value (e.g., midpoint of range).",
-            "6. Calculate Aggregate Costs: Based on the scheduled plan, the selected hotel (using the integer price from step 5), and daily cost notes: Calculate the *total* **integer** costs for `accommodation`, `transport`, `tickets`, and `food` for the entire trip. Sum these to get the overall `total_cost` **integer**.",
+            "6. Calculate Aggregate Costs: Based on the scheduled plan, the selected hotel (using the integer price from step 5), and daily cost notes: Calculate the *total* **integer** costs for `accommodationcost`, `transportcost`, `ticketcost`, and `foodcost` for the entire trip. Sum these to get the overall `totalcost` **integer**.",
             "7. **CRITICAL FINAL FORMATTING STEP:** Before generating the final JSON output:",
             "   - Review ALL fields.",
-            "   - Ensure ALL `Cost` fields (`totalcost`, `accomodationcost`, etc.) contain **only integer values** based on your step 6 calculations.",
+            "   - Ensure ALL `Cost` fields (`totalcost`, `accommodationcost`, etc.) contain **only integer values** based on your step 6 calculations.",
             "   - Ensure EACH `DailyActivity.estimated_cost` contains **only the single integer value** calculated in step 4. **NO ranges, '$', '/person', text.**",
             "   - Ensure EACH `DailyActivity.address` contains a clean, specific address string or relevant area name.",
             "   - Ensure `HotelSuggestion.estimated_price_per_night` contains **only the single integer value** determined in step 5. **NO ranges, '$'.**",
@@ -223,33 +253,50 @@ def main():
             "8. Generate Output: Structure the *final, reviewed, and correctly formatted* data strictly according to the `Output` Pydantic model, ensuring all integer fields contain only numbers.",
             "9. Suggest Image Prompts: Generate 2-3 prompts based on the scheduled activities.",
         ],
-        add_datetime_to_instructions=True,
-        response_model=Output,
+        add_datetime_to_instructions=True,  # Include current date/time info
+        response_model=Output,  # Use our Output model for structured results
     )
 
-    # 输入字段
+    # Step 5: Create user input interface
+    # ----------------------------------
+    # Create input fields for user information
     destination = st.text_input("Where do you want to go?")
-    # 优化：设置合理的最小值和默认值
-    num_days = st.number_input("How many days do you want to travel for?", min_value=1, max_value=30, value=1)
-    num_persons = st.number_input("How many persons for this trip?", min_value=1, value=1)
-    total_budget = st.number_input("How much is the estimated travel expense (US dollar)?", min_value=0, value=0)
+    # Set reasonable min values and defaults
+    num_days = st.number_input("How many days do you want to travel for?",
+                               min_value=1,    # Minimum 1 day
+                               max_value=30,   # Maximum 30 days
+                               value=1)        # Default is 1 day
+    num_persons = st.number_input("How many persons for this trip?",
+                                  min_value=1,  # Minimum 1 person
+                                  value=1)      # Default is 1 person
+    total_budget = st.number_input(
+        "How much is the estimated travel expense (US dollar)?",
+        min_value=0,   # Minimum $0
+        value=0)       # Default is $0
 
+    # Step 6: Handle the generate button and processing
+    # -----------------------------------------------
     if st.button("Generate Itinerary"):
-        # 优化：添加输入验证
+        # Step 6.1: Input validation
         if not destination:
             st.error("Please enter a destination")
             return
-            
-        # 优化：分离研究和规划步骤，分别显示加载状态
+
+        # Step 6.2: Research phase
+        # Perform travel research using the AI agent
         with st.spinner("Researching travel information..."):
-            # 获取研究信息
+            # Create the search prompt with user inputs
             research_prompt = f"{destination} for {num_days} days for {num_persons} persons under {total_budget} US dollar"
+            # Run the research agent and get results
             research_response = researcher.run(research_prompt, stream=False)
+            # Display the research findings
             st.subheader("Research Findings")
             st.write(research_response.content)
             
+        # Step 6.3: Planning phase
+        # Create the detailed itinerary using the AI agent
         with st.spinner("Creating your itinerary..."):
-            # 生成行程计划
+            # Format the prompt with research results
             planner_prompt = f"""
             **User Request:** Destination: {destination}, Duration: {num_days} days, People: {num_persons}, Budget: ~${total_budget} USD.
 
@@ -258,14 +305,18 @@ def main():
             {research_response.content}
             ```
             """
+            # Run the planning agent to create the itinerary
             response = planner.run(planner_prompt, stream=False)
-            
+
+            # Step 6.4: Process and display results
+            # If we got a valid response in the expected format
             if isinstance(response.content, Output):
-                output_obj = response.content
-                itinerary_obj = output_obj.itinerary
-                cost_obj = output_obj.cost
-                
-                # 创建Markdown内容
+                # Extract the different components
+                output_obj = response.content        # Full output
+                itinerary_obj = output_obj.itinerary # Just the itinerary
+                cost_obj = output_obj.cost           # Just the costs
+
+                # Start creating content for our downloadable document
                 markdown_content = f"""
                 # AI Travel Planner: {destination} Itinerary
 
@@ -273,30 +324,34 @@ def main():
 
                 ## Itinerary:
                 """
-                
-                # 优化：改进UI结构，使用子标题明确分隔内容
+
+                # Display the day-by-day itinerary
                 st.subheader("Your Itinerary")
                 for day in itinerary_obj.days:
                     st.write(day.description)
                     markdown_content += f"{day.description}\n\n"
-                
-                st.divider()
-                
-                # 显示成本细分
+
+                st.divider()  # Add a visual separator
+
+                # Display the cost information
                 st.header("Cost Breakdowns 💰")
                 
-                # 优化：使用封装的函数创建饼图
+                # Create and show the cost pie chart
                 fig = create_pie_chart(cost_obj)
                 st.pyplot(fig)
                 
-                # 修改: 更新总成本显示以使用新字段名
+                # Show the total cost as a headline
                 st.subheader(f"Total Cost: {cost_obj.totalcost}US$")
-                
-                # 优化：使用改进的save_markdown函数并传递cost_obj参数
-                download_file, download_data = save_markdown(destination, markdown_content, fig, cost_obj)
-                
-                # 优化：根据文件类型设置正确的MIME类型
-                mime_type = "application/pdf" if download_file.endswith(".pdf") else "text/markdown"
+
+                # Create the downloadable document
+                download_file, download_data = save_markdown(
+                    destination, markdown_content, fig, cost_obj)
+
+                # Set the correct file type for download
+                mime_type = "application/pdf" if download_file.endswith(
+                    ".pdf") else "text/markdown"
+                    
+                # Add a download button for the user
                 st.download_button(
                     label="Download Travel Plan",
                     data=download_data,
@@ -304,9 +359,11 @@ def main():
                     mime=mime_type,
                 )
             else:
-                # 优化：添加错误处理
+                # Handle errors if the response wasn't in the expected format
                 st.error("Failed to generate itinerary")
 
-# 优化：使用标准的Python入口点模式
+
+# Standard Python entry point pattern
+# Only runs the main function when this file is executed directly
 if __name__ == "__main__":
     main()
