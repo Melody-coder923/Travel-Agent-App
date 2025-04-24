@@ -186,7 +186,7 @@ def main():
     # Step 2: Set up API connection
     # ----------------------------
     # API key (in production, use environment variables or key management systems)
-    groq_api_key = "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"
+    groq_api_key = <"Input your groq_api_key">
 
     # Step 3: Create research agent
     # ----------------------------
@@ -194,7 +194,7 @@ def main():
     researcher = Agent(
         name="TravelResearcher",
         role="Travel Information Gatherer",
-        model=Groq(id="llama-3.3-70b-versatile", api_key=groq_api_key),
+        model=Groq(id="llama-3.3-70b-versatile", api_key=<"Your groq_api_key">),
         description=dedent(
             "Gather travel info using web search and provide a well-structured summary of findings."
         ),
@@ -229,7 +229,7 @@ def main():
     planner = Agent(
         name="ItineraryPlanner",
         role="Travel Itinerary Scheduler & Strict Formatter",
-        model=Groq(id="llama-3.3-70b-versatile", api_key=groq_api_key),
+        model=Groq(id="llama-3.3-70b-versatile", api_key=<"Your groq_api_key">),
         description=dedent(
             "Create a detailed itinerary by scheduling activities from research, then strictly format the output according to the Pydantic model, ensuring clean data types and values (especially integer costs)."
         ),
